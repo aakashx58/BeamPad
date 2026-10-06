@@ -8,11 +8,16 @@ import type { Pad } from './pad';
 
 const EMPTY: Pad = { text: '', at: 0 };
 
-// Vercel's Upstash integration sets KV_REST_API_*; a direct Upstash setup uses UPSTASH_REDIS_REST_*.
-const url = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
-const token = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
+// A direct Upstash setup uses UPSTASH_REDIS_REST_*; Vercel's integration uses KV_REST_API_*,
+// or <PREFIX>_..._REST_API_* when a custom prefix was chosen while connecting the database.
+const bySuffix = (suffix: string) => Object.entries(process.env).find(([k]) => k.endsWith(suffix))?.[1];
+const url = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL ?? bySuffix('_REST_API_URL');
+const token = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN ?? bySuffix('_REST_API_TOKEN');
 const redis = url && token ? new Redis({ url, token }) : null;
 const KEY = 'beampad:pad';
+
+/** Which backend is active — sent as the `x-storage` header so a deployment can be checked from outside. */
+export const storage = redis ? 'redis' : 'file';
 
 const DATA = path.join(process.cwd(), 'data.json');
 
@@ -26,6 +31,10 @@ export async function readPad(): Promise<Pad> {
 }
 
 export async function writePad(pad: Pad): Promise<void> {
-  if (redis) await redis.set(KEY, pad);
-  else fs.writeFileSync(DATA, JSON.stringify(pad));
+  if (redis) return void (await redis.set(KEY, pad));
+  // Vercel's disk is read-only, so the file fallback can't work there — say why instead of EROFS.
+  if (process.env.VERCEL) {
+    throw new Error('Redis is not configured: connect an Upstash Redis database to this Vercel project (it adds KV_REST_API_URL / KV_REST_API_TOKEN), then redeploy.');
+  }
+  fs.writeFileSync(DATA, JSON.stringify(pad));
 }
