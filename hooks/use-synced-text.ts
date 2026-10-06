@@ -84,8 +84,17 @@ export function useSyncedText() {
 
   useEffect(() => {
     pull();
-    const t = setInterval(() => (dirty.current ? flush() : pull()), POLL_MS);
-    return () => clearInterval(t);
+    // Skip polls while the tab is hidden (saves Redis/Vercel quota), catch up when it's shown.
+    const t = setInterval(() => {
+      if (dirty.current) flush();
+      else if (!document.hidden) pull();
+    }, POLL_MS);
+    const onVisible = () => !document.hidden && pull();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   return { text, edit, loaded, status, inputRef };

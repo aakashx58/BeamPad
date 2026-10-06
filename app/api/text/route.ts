@@ -3,8 +3,8 @@ import { readPad, writePad } from '../../../lib/store';
 
 export const dynamic = 'force-dynamic';
 
-export function GET() {
-  return Response.json(readPad());
+export async function GET() {
+  return Response.json(await readPad());
 }
 
 export async function PUT(req: Request) {
@@ -17,6 +17,6 @@ export async function PUT(req: Request) {
 
   // ponytail: last write wins; two people typing at the same moment overwrite each other — use a CRDT (Yjs) if that matters
   const pad: Pad = { text: body.text, at: Date.now() };
-  writePad(pad);
+  await writePad(pad);
   return Response.json(pad);
 }

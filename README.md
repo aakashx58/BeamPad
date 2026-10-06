@@ -19,7 +19,7 @@ Beampad is one text box that every device on your network shares. Paste a link o
 - **Live status.** The header shows *Synced*, *Saving…* or *Offline*. Unsaved text is kept and retried after a connection drop.
 - **Copy and Clear.** Copy works over plain `http` on a LAN. Clear asks for confirmation first, because it clears every device.
 - **Works on phones.** The layout fits the screen, and the app can be added to the home screen with its own icon.
-- **Keeps text through restarts.** Text is saved to `data.json` on the machine running the server.
+- **Keeps text through restarts.** Text is saved to `data.json` locally, or to Redis when deployed.
 
 ## Tech stack
 
@@ -28,8 +28,8 @@ Beampad is one text box that every device on your network shares. Paste a link o
 | Framework | [Next.js 16](https://nextjs.org) (App Router, Turbopack) |
 | UI | React 19, [Tailwind CSS 4](https://tailwindcss.com) |
 | Language | TypeScript |
-| Storage | A JSON file on disk, with no database |
-| Runtime dependencies | `next`, `react`, `react-dom` only |
+| Storage | [Upstash Redis](https://upstash.com) when deployed, a local `data.json` file otherwise |
+| Runtime dependencies | `next`, `react`, `react-dom`, `@upstash/redis` |
 
 ## Getting started
 
@@ -66,6 +66,20 @@ Open the Network address on your phone, then:
 
 - **iPhone (Safari):** Share → *Add to Home Screen*
 - **Android (Chrome):** ⋮ menu → *Add to Home screen*
+
+## Deploy to Vercel
+
+Vercel runs the API as serverless functions, which **can't write files**, so a deployment needs Redis. Without it, every save fails and the page shows *Offline*.
+
+1. Import the GitHub repo in [Vercel](https://vercel.com/new).
+2. In the project, open **Storage** → **Create Database** → **Upstash for Redis** (the free plan is enough), and connect it to the project. This adds the `KV_REST_API_URL` and `KV_REST_API_TOKEN` environment variables.
+3. **Redeploy.** Environment variables only apply to new deployments.
+
+`lib/store.ts` picks the storage automatically: Redis when `KV_REST_API_URL`/`KV_REST_API_TOKEN` (or `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`) are set, `data.json` otherwise. To use the deployed database while developing locally, put the same variables in `.env.local`.
+
+> **Heads-up: a public deployment is one pad for the whole internet.** Anyone with the URL can read and replace the text. Don't put anything private in it.
+
+**Quota.** Each open tab polls every 1.5 seconds, and each poll is one Redis command and one function call. Polling pauses while the tab is hidden, but a tab left open in the foreground all day still adds up. Check your Upstash and Vercel plan limits if usage grows.
 
 ## Scripts
 
@@ -110,7 +124,7 @@ hooks/
   use-synced-text.ts     All sync logic: load, debounced save, retry, cursor keeping
 lib/
   pad.ts                 Shared type and size limit (browser and server)
-  store.ts               Server only: reads and writes data.json
+  store.ts               Server only: Redis when configured, data.json otherwise
   clipboard.ts           Copy to clipboard, with a fallback for plain http
 ```
 
@@ -144,11 +158,11 @@ lib/
 
 These are deliberate trade-offs to keep the app small:
 
-- **No authentication.** Anyone on your network can read and edit the text. Don't run it on public or shared Wi-Fi with anything sensitive.
+- **No authentication.** Anyone on your network, or anyone with the URL when deployed, can read and edit the text. Don't use it for anything sensitive.
 - **Last write wins.** If two people type at the same moment, the later save replaces the earlier one. Real-time merging would need a CRDT library such as [Yjs](https://yjs.dev).
 - **Polling, not push.** Updates arrive within about 1.5 seconds. Server-Sent Events would make them instant.
 - **Plain HTTP.** Browsers limit the clipboard API outside `localhost`, so Copy falls back to an older method. Keyboard paste (Ctrl+V or long-press) always works.
-- **One machine, one file.** The text lives in `data.json` next to the app, which is listed in `.gitignore`. Delete the file to reset.
+- **One shared pad.** There are no separate rooms. Locally the text lives in `data.json` (gitignored; delete it to reset). When deployed, it lives in the Redis key `beampad:pad`.
 
 ## Troubleshooting
 
@@ -158,4 +172,5 @@ These are deliberate trade-offs to keep the app small:
 | `http://0.0.0.0:3000` doesn't open | `0.0.0.0` means "every network on this PC"; it isn't an address you can visit. Use the `192.168.x.x` address. |
 | **401** or **404** errors, nothing saves | A static file server (`serve`, `npx serve`, Live Server) is running instead of the app. Stop it and run `npm start`. |
 | Stuck on *Loading…* in dev mode over the LAN | `next dev` blocks other devices unless they're listed in `allowedDevOrigins` in `next.config.ts`. Add your network's address range there, or use `npm start`. |
+| Deployed on Vercel, always *Offline* | No Redis is connected, and serverless functions can't write `data.json`. See [Deploy to Vercel](#deploy-to-vercel), then redeploy. |
 | Port 3000 already in use | Stop the other process, or run `npm start -- -p 4000`. |
