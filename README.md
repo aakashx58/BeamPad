@@ -14,6 +14,7 @@ Beampad is one text box that every device on your network shares. Paste a link o
 ## Features
 
 - **Automatic sync.** Text saves about half a second after you stop typing, and other devices pick it up within about 1.5 seconds.
+- **One pad per network.** When deployed, devices on the same Wi-Fi share a pad, and visitors from any other network get their own. They never see yours.
 - **Your typing is never overwritten.** Changes from other devices wait until this device has saved its own edits, and your cursor stays where it was.
 - **Link list.** Every `http(s)` link in the text appears under the editor as a card you can tap.
 - **Live status.** The header shows *Synced*, *Saving…* or *Offline*. Unsaved text is kept and retried after a connection drop.
@@ -79,7 +80,16 @@ Vercel runs the API as serverless functions, which **can't write files**, so a d
 
 `lib/store.ts` picks the storage automatically: Redis when `KV_REST_API_URL`/`KV_REST_API_TOKEN` (or `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`) are set, `data.json` otherwise. To use the deployed database while developing locally, put the same variables in `.env.local`.
 
-> **Heads-up: a public deployment is one pad for the whole internet.** Anyone with the URL can read and replace the text. Don't put anything private in it.
+### One pad per network
+
+The URL is public, but **each network gets its own pad**. Devices behind the same router reach Vercel from the same public IP address (or the same IPv6 `/64` prefix), so `lib/network.ts` uses that as the pad id. Everyone on your Wi-Fi shares one pad. A visitor from another network gets a different, empty pad and can't read or change yours. The header shows the network id, and two devices only share a pad when they show the same id.
+
+The IP comes from `x-real-ip` / `x-forwarded-for`, which Vercel's edge sets and clients can't spoof. A request with no IP is rejected rather than pooled. Pads expire 7 days after the last edit.
+
+Caveats:
+- **Mobile data:** carriers put many unrelated customers behind one public IP, so strangers on the same carrier can land in the same pad. Use Wi-Fi.
+- **VPNs and private relays** (for example iCloud Private Relay) change your public IP, so that device lands in a different pad.
+- **IPv4 vs IPv6:** on a network with both, one device may connect over IPv4 and another over IPv6. If the network ids in the header don't match, the devices won't share a pad.
 
 **Quota.** Each open tab polls every 1.5 seconds, and each poll is one Redis command and one function call. Polling pauses while the tab is hidden, but a tab left open in the foreground all day still adds up. Check your Upstash and Vercel plan limits if usage grows.
 
@@ -90,6 +100,7 @@ Vercel runs the API as serverless functions, which **can't write files**, so a d
 | `npm run dev` | Development server that reloads on save. Reachable from the LAN (see `next.config.ts`). |
 | `npm run build` | Production build. Run it again after changing the code. |
 | `npm start` | Runs the production build. Use this for everyday use. |
+| `npm test` | Runs the unit tests (`lib/*.test.ts`). |
 
 To use a different port, run `npm start -- -p 4000`, or set the `PORT` environment variable.
 
@@ -126,6 +137,8 @@ hooks/
   use-synced-text.ts     All sync logic: load, debounced save, retry, cursor keeping
 lib/
   pad.ts                 Shared type and size limit (browser and server)
+  network.ts             Server only: which network a request comes from (pad id)
+  network.test.ts        Tests for network.ts (npm test)
   store.ts               Server only: Redis when configured, data.json otherwise
   clipboard.ts           Copy to clipboard, with a fallback for plain http
 ```
@@ -151,8 +164,8 @@ lib/
 
 | Method | Path | Body | Response |
 |---|---|---|---|
-| `GET` | `/api/text` | none | `{ "text": string, "at": number }` |
-| `PUT` | `/api/text` | `{ "text": string }` | `{ "text": string, "at": number }` |
+| `GET` | `/api/text` | none | `{ "text": string, "at": number, "network": string }` |
+| `PUT` | `/api/text` | `{ "text": string }` | `{ "text": string, "at": number, "network": string }` |
 
 `PUT` returns `400` when `text` is missing or isn't a string, and `413` above 1,000,000 characters. The limit is set in `lib/pad.ts`.
 
@@ -160,11 +173,11 @@ lib/
 
 These are deliberate trade-offs to keep the app small:
 
-- **No authentication.** Anyone on your network, or anyone with the URL when deployed, can read and edit the text. Don't use it for anything sensitive.
+- **No authentication.** Anyone on the same network can read and edit that network's pad. That includes strangers sharing a mobile carrier's IP. Don't use it for anything sensitive.
 - **Last write wins.** If two people type at the same moment, the later save replaces the earlier one. Real-time merging would need a CRDT library such as [Yjs](https://yjs.dev).
 - **Polling, not push.** Updates arrive within about 1.5 seconds. Server-Sent Events would make them instant.
 - **Plain HTTP.** Browsers limit the clipboard API outside `localhost`, so Copy falls back to an older method. Keyboard paste (Ctrl+V or long-press) always works.
-- **One shared pad.** There are no separate rooms. Locally the text lives in `data.json` (gitignored; delete it to reset). When deployed, it lives in the Redis key `beampad:pad`.
+- **Self-hosted means one pad.** With `npm start` at home, everyone who can reach the server shares one pad, stored in `data.json` (gitignored; delete it to reset). Separate pads per network only apply on Vercel, where the client IP can be trusted. When deployed, each pad lives in the Redis key `beampad:pad:<network>`.
 
 ## Troubleshooting
 
