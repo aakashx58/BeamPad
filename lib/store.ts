@@ -1,16 +1,31 @@
-// Server-only: persists the pad to data.json.
+// Server-only: persists the pad.
+// - Redis (Upstash) when configured: required on Vercel/serverless, where the disk is read-only.
+// - data.json otherwise: zero setup for running on your own machine.
 import fs from 'node:fs';
 import path from 'node:path';
+import { Redis } from '@upstash/redis';
 import type { Pad } from './pad';
+
+const EMPTY: Pad = { text: '', at: 0 };
+
+// Vercel's Upstash integration sets KV_REST_API_*; a direct Upstash setup uses UPSTASH_REDIS_REST_*.
+const url = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
+const token = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
+const redis = url && token ? new Redis({ url, token }) : null;
+const KEY = 'beampad:pad';
 
 const DATA = path.join(process.cwd(), 'data.json');
 
-export const readPad = (): Pad => {
+export async function readPad(): Promise<Pad> {
+  if (redis) return (await redis.get<Pad>(KEY)) ?? EMPTY;
   try {
     const d = JSON.parse(fs.readFileSync(DATA, 'utf8'));
     if (typeof d?.text === 'string') return d;
   } catch { /* first run */ }
-  return { text: '', at: 0 };
-};
+  return EMPTY;
+}
 
-export const writePad = (pad: Pad) => fs.writeFileSync(DATA, JSON.stringify(pad));
+export async function writePad(pad: Pad): Promise<void> {
+  if (redis) await redis.set(KEY, pad);
+  else fs.writeFileSync(DATA, JSON.stringify(pad));
+}
