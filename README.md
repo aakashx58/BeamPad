@@ -75,6 +75,8 @@ Vercel runs the API as serverless functions, which **can't write files**, so a d
 2. In the project, open **Storage** → **Create Database** → **Upstash for Redis** (the free plan is enough), and connect it to the project. This adds the `KV_REST_API_URL` and `KV_REST_API_TOKEN` environment variables.
 3. **Redeploy.** Environment variables only apply to new deployments.
 
+**Only `main` deploys.** `vercel.json` turns off automatic deployments for every branch except `main`, so pushing a feature branch (such as `feat/redis`) doesn't create a preview. Merge into `main` to ship. The pattern is `**` rather than `*` so it also covers branch names that contain `/`.
+
 `lib/store.ts` picks the storage automatically: Redis when `KV_REST_API_URL`/`KV_REST_API_TOKEN` (or `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`) are set, `data.json` otherwise. To use the deployed database while developing locally, put the same variables in `.env.local`.
 
 > **Heads-up: a public deployment is one pad for the whole internet.** Anyone with the URL can read and replace the text. Don't put anything private in it.
