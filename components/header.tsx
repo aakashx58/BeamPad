@@ -8,7 +8,7 @@ const STATUS: Record<SyncStatus, { label: string; dot: string }> = {
   offline: { label: 'Offline', dot: 'bg-red-600 ring-red-600/20' },
 };
 
-export function Header({ status }: { status: SyncStatus }) {
+export function Header({ status, network }: { status: SyncStatus; network: string | null }) {
   const s = STATUS[status];
   return (
     <header className="mb-6 flex items-center justify-between">
@@ -17,6 +17,10 @@ export function Header({ status }: { status: SyncStatus }) {
         <div>
           <h1 className="text-xl font-bold tracking-tight">Beampad</h1>
           <div className="text-[13px] text-slate-500">Type here, it appears on every device on your network</div>
+          {/* Shown when deployed: if two devices disagree here, they are not on the same network. */}
+          {network && network !== 'lan' && (
+            <div className="text-xs text-slate-400">Network <span className="font-mono">{network}</span></div>
+          )}
         </div>
       </div>
       <span className="inline-flex items-center gap-1.5 text-[13px] text-slate-500" aria-live="polite">

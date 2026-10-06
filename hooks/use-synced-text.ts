@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { Pad } from '../lib/pad';
+import type { PadResponse } from '../lib/pad';
 
 export type SyncStatus = 'synced' | 'saving' | 'offline';
 
@@ -18,6 +18,7 @@ export function useSyncedText() {
   const [text, setText] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [status, setStatus] = useState<SyncStatus>('synced');
+  const [network, setNetwork] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const latest = useRef('');   // what's in the box right now
@@ -37,8 +38,11 @@ export function useSyncedText() {
 
   const pull = async () => {
     try {
-      const pad: Pad = await (await fetch('/api/text', { cache: 'no-store' })).json();
+      const res = await fetch('/api/text', { cache: 'no-store' });
+      if (!res.ok) throw new Error(String(res.status));
+      const pad: PadResponse = await res.json();
       setLoaded(true);
+      setNetwork(pad.network);
       setStatus(s => (s === 'offline' ? 'synced' : s));
       if (dirty.current || pad.at <= version.current) return;
       version.current = pad.at;
@@ -60,7 +64,7 @@ export function useSyncedText() {
         body: JSON.stringify({ text: value }),
       });
       if (!res.ok) throw new Error(String(res.status));
-      version.current = ((await res.json()) as Pad).at;
+      version.current = ((await res.json()) as PadResponse).at;
       if (latest.current === value) {
         dirty.current = false;
         setStatus('synced');
@@ -97,5 +101,5 @@ export function useSyncedText() {
     };
   }, []);
 
-  return { text, edit, loaded, status, inputRef };
+  return { text, edit, loaded, status, network, inputRef };
 }
