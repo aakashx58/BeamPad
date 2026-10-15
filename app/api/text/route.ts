@@ -16,7 +16,11 @@ export async function GET(req: Request) {
   const network = networkOf(req);
   if (!network) return noNetwork();
   try {
-    const body: PadResponse = { ...(await readPad(network)), network };
+    const pad = await readPad(network);
+    // Client already has this version: skip re-sending up to MAX_CHARS of text on every poll.
+    const since = Number(new URL(req.url).searchParams.get('since'));
+    if (since > 0 && pad.at <= since) return new Response(null, { status: 304, headers });
+    const body: PadResponse = { ...pad, network };
     return Response.json(body, { headers });
   } catch (e) {
     console.error('readPad failed:', e); // shows up in Vercel → Logs

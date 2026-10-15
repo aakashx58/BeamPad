@@ -38,7 +38,13 @@ export function useSyncedText() {
 
   const pull = async () => {
     try {
-      const res = await fetch('/api/text', { cache: 'no-store' });
+      const since = version.current > 0 ? `?since=${version.current}` : '';
+      const res = await fetch(`/api/text${since}`, { cache: 'no-store' });
+      if (res.status === 304) { // nothing new on the server
+        setLoaded(true);
+        setStatus(s => (s === 'offline' ? 'synced' : s));
+        return;
+      }
       if (!res.ok) throw new Error(String(res.status));
       const pad: PadResponse = await res.json();
       setLoaded(true);

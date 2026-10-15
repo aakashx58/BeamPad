@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Redis } from '@upstash/redis';
+import { perNetwork } from './network';
 import type { Pad } from './pad';
 
 const EMPTY: Pad = { text: '', at: 0 };
@@ -35,9 +36,9 @@ export async function readPad(network: string): Promise<Pad> {
 
 export async function writePad(network: string, pad: Pad): Promise<void> {
   if (redis) return void (await redis.set(key(network), pad, { ex: TTL_SECONDS }));
-  // Vercel's disk is read-only, so the file fallback can't work there — say why instead of EROFS.
-  if (process.env.VERCEL) {
-    throw new Error('Redis is not configured: connect an Upstash Redis database to this Vercel project (it adds KV_REST_API_URL / KV_REST_API_TOKEN), then redeploy.');
+  // Serverless disks are read-only and per-network pads need shared storage — say why instead of EROFS.
+  if (perNetwork()) {
+    throw new Error('Redis is not configured: set UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN (on Vercel, connect an Upstash database to the project), then redeploy.');
   }
   fs.writeFileSync(DATA, JSON.stringify(pad));
 }

@@ -3,13 +3,16 @@
 // Devices behind the same router share one public IPv4 address (NAT), or one /64 prefix on IPv6.
 // Visitors from any other network get a different id, so they never see this network's text.
 
+// Per-network pads are on when deployed behind a trusted proxy (Vercel, or PER_NETWORK=1 on any other host).
+export const perNetwork = () => process.env.PER_NETWORK === '1' || !!process.env.VERCEL;
+
 /** The pad id for this request, or null if the network can't be determined (fail closed). */
 export function networkOf(req: Request): string | null {
   // Self-hosted (`npm start` at home): one pad for everyone who can reach this server.
   // Client IP headers can't be trusted here — any client can send its own X-Forwarded-For.
-  if (!process.env.VERCEL) return 'lan';
+  if (!perNetwork()) return 'lan';
 
-  // On Vercel these headers are set by Vercel's edge and overwrite anything the client sent.
+  // Behind a trusted proxy these headers are set by the proxy and overwrite anything the client sent.
   const ip = (req.headers.get('x-real-ip') ?? req.headers.get('x-forwarded-for')?.split(',')[0])?.trim();
   return ip ? networkId(ip) : null;
 }
